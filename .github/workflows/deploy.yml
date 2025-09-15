@@ -20,4 +20,6 @@ jobs:
         run: echo "${{ secrets.SF_AUTH_URL }}" > auth.txt && sf org login sfdx-url --sfdx-url-file auth.txt -a TargetOrg
 
       - name: Deploy metadata
-        run: sf project deploy start --manifest salesforce-deployment/manifest/package.xml --target-org TargetOrg
+        run: |
+          cd salesforce-deployment
+          sf project deploy start --manifest manifest/package.xml --target-org TargetOrg
