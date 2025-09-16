@@ -31,9 +31,11 @@ jobs:
           echo "${{ secrets.SF_AUTH_URL }}" > auth.txt
           sf org login sfdx-url --sfdx-url-file auth.txt -a TargetOrg
 
-      # Step 5: Install sfdx-git-delta globally
+      # Step 5: Install sfdx-git-delta globally and add to PATH
       - name: Install sfdx-git-delta globally
-        run: npm install -g sfdx-git-delta
+        run: |
+          npm install -g sfdx-git-delta
+          echo "$(npm bin -g)" >> $GITHUB_PATH
 
       # Step 6: Generate Delta (only changed files vs main)
       - name: Generate Delta Package
