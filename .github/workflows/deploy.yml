@@ -1,25 +1,97 @@
-name: Deploy to Target Org
- 
+# A more descriptive name for the workflow
+name: Salesforce CI/CD - Validate and Deploy
+
+# This section defines when the workflow runs
 on:
   push:
     branches:
+      # Runs on pushes to the main branch (for deployment)
       - main
- 
+      # Runs on pushes to any branch starting with 'feature/' (for validation)
+      - 'feature/**'
+
 jobs:
-  deploy:
+  validate-and-deploy:
     runs-on: ubuntu-latest
- 
+    # Using an environment variable for the PMD version makes it easy to update
+    env:
+      PMD_VERSION: '7.2.0'
+
     steps:
+      # Step 1: Check out the repository
+      # fetch-depth: 0 is required to fetch all history for a proper branch comparison.
       - name: Checkout repository
-        uses: actions/checkout@v3
- 
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Step 2: Install the Salesforce CLI
       - name: Install Salesforce CLI
-        run: npm install --global @salesforce/cli
- 
-      - name: Authenticate to Target Org
-        run: echo "${{ secrets.SF_AUTH_URL }}" > auth.txt && sf org login sfdx-url --sfdx-url-file auth.txt -a TargetOrg
- 
-      - name: Deploy metadata
         run: |
-          cd salesforce-deployment
-          sf project deploy start --manifest manifest/package.xml --target-org TargetOrg
+          npm install --global @salesforce/cli
+          sf --version
+
+      # Step 3: Authenticate to your Salesforce Org
+      # We set this org as the default for subsequent commands.
+      - name: Authenticate to Target Org
+        run: echo "${{ secrets.SF_AUTH_URL }}" > auth.txt && sf org login sfdx-url --sfdx-url-file auth.txt -a TargetOrg --set-default
+
+      # Step 4: Install the SFDX Git Delta plugin to find changed files
+      - name: Install SFDX Git Delta Plugin
+        run: sf plugins install sfdx-git-delta
+
+      # Step 5: Compare the branch with 'main' to generate a package of changed files
+      # This is the core step for deploying only the changes.
+      - name: Generate package of changes
+        run: |
+          # This command compares your feature branch to main and puts the changed files
+          # and a new package.xml into a directory named 'changed-sources'.
+          sf sgd source delta --to "HEAD" --from "origin/main" --output "changed-sources"
+          echo "✅ Delta package created. Files to be processed:"
+          # This command lists the files for easy debugging in the Action logs.
+          ls -R changed-sources
+
+      # Step 6: Setup Java and the PMD Static Code Analysis tool
+      - name: Setup Java and PMD
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-11-jdk
+          wget https://github.com/pmd/pmd/releases/download/pmd_releases%2F${{ env.PMD_VERSION }}/pmd-bin-${{ env.PMD_VERSION }}.zip
+          unzip pmd-bin-${{ env.PMD_VERSION }}.zip
+          echo "${PWD}/pmd-bin-${{ env.PMD_VERSION }}/bin" >> $GITHUB_PATH
+
+      # Step 7: Run PMD scan to check for code quality
+      # This will run on every push to 'main' or a feature branch.
+      # The workflow will fail here if any issues are found.
+      - name: Run PMD Static Code Analysis
+        run: |
+          echo "Running PMD scan..."
+          # NOTE: Adjust the source path '-d force-app' and the ruleset '-R rulesets/apex/quickstart.xml'
+          # to match your project's structure and rules.
+          run.sh pmd -d force-app -R rulesets/apex/quickstart.xml -f text
+          echo "✅ PMD scan passed."
+
+      # Step 8: VALIDATE changes (only for feature branches)
+      # This step runs a "check-only" deployment to ensure the changes are valid
+      # without actually saving them to the org.
+      - name: Validate changes against target org
+        if: startsWith(github.ref, 'refs/heads/feature/')
+        run: |
+          echo "🚀 Validating changes for feature branch..."
+          sf project deploy start --source-dir "changed-sources" --test-level RunLocalTests --check-only
+
+      # Step 9: DEPLOY changes (only for the main branch)
+      # This is the actual deployment. It only runs when code is pushed or merged to 'main'.
+      # This acts as your "back deployment" safety net; code is only deployed after it has
+      # been validated and approved into the main branch.
+      - name: Deploy changes to target org
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "🚀 Deploying changes from main branch..."
+          sf project deploy start --source-dir "changed-sources" --test-level RunLocalTests
+
+      # Step 10: Logout from the Org (important security best practice)
+      # The 'if: always()' ensures this step runs even if a previous step failed.
+      - name: Logout from Target Org
+        if: always()
+        run: sf org logout --target-org TargetOrg
