@@ -9,8 +9,7 @@ on:
       - main
 
 permissions:
-  contents: write   # allow pushing tags from Actions
-  pull-requests: write   # allow posting comments to PRs
+  contents: write   # 👈 allow pushing tags from Actions
 
 jobs:
   # Only runs merge checks on PR (no validation deploy)
@@ -34,7 +33,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # ensures tags are fetched/pushed properly
+          fetch-depth: 0  # 👈 ensures tags are fetched/pushed properly
 
       - name: Install Salesforce CLI
         run: npm install --global @salesforce/cli
@@ -54,15 +53,3 @@ jobs:
           git tag -a deployed-$(date +'%Y%m%d%H%M%S') -m "Successful Deployment"
           git push origin --tags
 
-      - name: Success Notification via GitHub Comment
-        if: success()
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.payload.pull_request ? context.payload.pull_request.number : null,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: "✅ Deployment to **TargetOrg** was successful!"
-            })
