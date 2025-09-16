@@ -49,3 +49,7 @@ jobs:
       # 7️⃣ Optional: Post deployment message
       - name: Deployment Status
         run: echo "Feature branch deployed successfully to Target Org"
+
+# Optional rollback job
+# You can create another workflow file for rollback
+# It can checkout a previous commit or branch and deploy using sf project deploy
