@@ -47,5 +47,7 @@ jobs:
 
       - name: Save Successful Deployment (for rollback)
         run: |
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
           git tag -a deployed-$(date +'%Y%m%d%H%M%S') -m "Successful Deployment"
           git push origin --tags
