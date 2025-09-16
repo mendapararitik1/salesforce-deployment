@@ -1,25 +1,51 @@
-name: Deploy to Target Org
- 
+name: Salesforce CI/CD
+
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
- 
+
 jobs:
-  deploy:
+  validate-deploy:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
- 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
- 
+
       - name: Install Salesforce CLI
         run: npm install --global @salesforce/cli
- 
+
+      - name: Authenticate to Test Org (for validation)
+        run: echo "${{ secrets.SF_AUTH_URL_TEST }}" > auth.txt && sf org login sfdx-url --sfdx-url-file auth.txt -a TestOrg
+
+      - name: Validate Metadata Deployment
+        run: |
+          cd salesforce-deployment
+          sf project deploy validate --manifest manifest/package.xml --target-org TestOrg
+          
+  deploy-to-target:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install Salesforce CLI
+        run: npm install --global @salesforce/cli
+
       - name: Authenticate to Target Org
         run: echo "${{ secrets.SF_AUTH_URL }}" > auth.txt && sf org login sfdx-url --sfdx-url-file auth.txt -a TargetOrg
- 
+
       - name: Deploy metadata
         run: |
           cd salesforce-deployment
           sf project deploy start --manifest manifest/package.xml --target-org TargetOrg
+
+      - name: Save Successful Deployment (for rollback)
+        run: |
+          git tag -a deployed-$(date +'%Y%m%d%H%M%S') -m "Successful Deployment"
+          git push origin --tags
