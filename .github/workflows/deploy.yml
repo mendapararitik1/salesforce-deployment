@@ -1,70 +1,75 @@
 name: Salesforce Feature Branch Delta Deployment
-
 on:
   push:
     branches:
       - main
       - 'feature/**'  # Trigger for all feature branches
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       # Step 1: Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v3
-
+        with:
+          fetch-depth: 0  # Fetch full history for delta comparison
+      
       # Step 2: Install Node.js (required for sfdx-git-delta)
       - name: Install Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 20
-
+      
       # Step 3: Install Salesforce CLI
       - name: Install Salesforce CLI
         run: npm install --global @salesforce/cli
-
-      # Step 4: Authenticate to Target Org
+      
+      # Step 4: Install sfdx-git-delta globally
+      - name: Install sfdx-git-delta globally
+        run: npm install -g sfdx-git-delta
+      
+      # Step 5: Authenticate to Target Org
       - name: Authenticate to Target Org
         run: |
           echo "${{ secrets.SF_AUTH_URL }}" > auth.txt
           sf org login sfdx-url --sfdx-url-file auth.txt -a TargetOrg
-
-      # Step 5: Install sfdx-git-delta globally and add to PATH
-      - name: Install sfdx-git-delta globally
-        run: |
-          npm install -g sfdx-git-delta
-          echo "$(npm bin -g)" >> $GITHUB_PATH
-
+      
       # Step 6: Generate Delta (only changed files vs main)
       - name: Generate Delta Package
         run: |
           git fetch origin main
-          sfdx-git-delta --from origin/main --to HEAD --output delta_package --loglevel debug
+          npx sfdx-git-delta --from origin/main --to HEAD --output delta_package --loglevel debug
           echo "Delta files generated in delta_package folder"
-
+      
       # Step 7: Install PMD
       - name: Install PMD
         run: |
           wget https://github.com/pmd/pmd/releases/download/pmd_releases%2F6.59.0/pmd-bin-6.59.0.zip
           unzip pmd-bin-6.59.0.zip
-
+      
       # Step 8: Run PMD Validation on changed metadata
       - name: Run PMD Validation
         run: |
-          ./pmd-bin-6.59.0/bin/run.sh pmd -d delta_package/force-app -R category/apex/design.xml -f text
-
+          if [ -d "delta_package/force-app" ]; then
+            ./pmd-bin-6.59.0/bin/run.sh pmd -d delta_package/force-app -R category/apex/design.xml -f text
+          else
+            echo "No delta changes found for PMD validation"
+          fi
+      
       # Step 9: Deploy Delta to Target Org
       - name: Deploy Delta Metadata
         run: |
-          sf project deploy start --source-dir delta_package/force-app --target-org TargetOrg
-
+          if [ -d "delta_package/force-app" ] && [ "$(ls -A delta_package/force-app)" ]; then
+            sf project deploy start --source-dir delta_package/force-app --target-org TargetOrg
+          else
+            echo "No delta changes to deploy"
+          fi
+      
       # Step 10: Optional Rollback (manual trigger)
       - name: Rollback (manual)
         if: ${{ github.event.inputs.rollback == 'true' }}
         run: |
           PREVIOUS_TAG=previous-deployed-version
           git checkout $PREVIOUS_TAG
-          sfdx-git-delta --from $PREVIOUS_TAG --to HEAD --output delta_package
-          sf project deploy start --source-dir delta_package/force-app --target-org TargetOrg
+          npx sfdx-git-delta --from $PREVIOUS_TAG --to HEAD --output rollback_package
+          sf project deploy start --source-dir rollback_package/force-app --target-org TargetOrg
