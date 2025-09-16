@@ -31,15 +31,15 @@ jobs:
           echo "${{ secrets.SF_AUTH_URL }}" > auth.txt
           sf org login sfdx-url --sfdx-url-file auth.txt -a TargetOrg
 
-      # Step 5: Install sfdx-git-delta locally
-      - name: Install sfdx-git-delta
-        run: npm install sfdx-git-delta
+      # Step 5: Install sfdx-git-delta globally
+      - name: Install sfdx-git-delta globally
+        run: npm install -g sfdx-git-delta
 
       # Step 6: Generate Delta (only changed files vs main)
       - name: Generate Delta Package
         run: |
           git fetch origin main
-          npx sfdx-git-delta --from origin/main --to HEAD --output delta_package --loglevel debug
+          sfdx-git-delta --from origin/main --to HEAD --output delta_package --loglevel debug
           echo "Delta files generated in delta_package folder"
 
       # Step 7: Install PMD
@@ -64,5 +64,5 @@ jobs:
         run: |
           PREVIOUS_TAG=previous-deployed-version
           git checkout $PREVIOUS_TAG
-          npx sfdx-git-delta --from $PREVIOUS_TAG --to HEAD --output delta_package
+          sfdx-git-delta --from $PREVIOUS_TAG --to HEAD --output delta_package
           sf project deploy start --source-dir delta_package/force-app --target-org TargetOrg
