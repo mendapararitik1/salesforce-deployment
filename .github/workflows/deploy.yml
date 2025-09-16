@@ -1,55 +1,25 @@
-name: Deploy Feature Branch to Target Org
-
+name: Deploy to Target Org
+ 
 on:
   push:
     branches:
-      - 'feature/**'   # Trigger on all feature branches
-
+      - main
+ 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
+ 
     steps:
-      # 1️⃣ Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0  # Needed to get full git history for delta comparison
-
-      # 2️⃣ Install Salesforce CLI
+ 
       - name: Install Salesforce CLI
         run: npm install --global @salesforce/cli
-
-      # 3️⃣ Install sfdx-git-delta for delta deployments
-      - name: Install sfdx-git-delta
-        run: npm install -g sfdx-git-delta
-
-      # 4️⃣ Authenticate to Target Org
+ 
       - name: Authenticate to Target Org
+        run: echo "${{ secrets.SF_AUTH_URL }}" > auth.txt && sf org login sfdx-url --sfdx-url-file auth.txt -a TargetOrg
+ 
+      - name: Deploy metadata
         run: |
-          echo "${{ secrets.SF_AUTH_URL }}" > auth.txt
-          sf org login sfdx-url --sfdx-url-file auth.txt -a TargetOrg
-
-      # 5️⃣ Generate list of changed metadata files using sfdx-git-delta
-      - name: Generate Delta Metadata
-        run: |
-          sfdx-git-delta --to main --source ./ --target ./delta
-          echo "Changed files stored in ./delta"
-
-      # 6️⃣ Deploy only changed metadata
-      - name: Deploy Delta Metadata
-        run: |
-          if [ -d "./delta" ] && [ "$(ls -A ./delta)" ]; then
-            echo "Deploying only changed metadata..."
-            sf project deploy start --source-dir ./delta --target-org TargetOrg
-          else
-            echo "No changes to deploy."
-          fi
-
-      # 7️⃣ Optional: Post deployment message
-      - name: Deployment Status
-        run: echo "Feature branch deployed successfully to Target Org"
-
-# Optional rollback job
-# You can create another workflow file for rollback
-# It can checkout a previous commit or branch and deploy using sf project deploy
+          cd salesforce-deployment
+          sf project deploy start --manifest manifest/package.xml --target-org TargetOrg
